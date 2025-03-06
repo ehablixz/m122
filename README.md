@@ -22,3 +22,4 @@ Wir haben auch geschaut wie die bennenung der Partitionen funktioniert.
 
 Dritter Tag
 ---
+
