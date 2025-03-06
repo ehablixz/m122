@@ -1,4 +1,3 @@
-```markdown
 ## Einführung  
 Bash-Skripte sind nützlich zur Automatisierung von Aufgaben. Ein typisches Skript beginnt mit dem **Shebang** (`#!/bin/bash`), der festlegt, dass das Skript mit Bash ausgeführt wird.
 
@@ -6,7 +5,7 @@ Bash-Skripte sind nützlich zur Automatisierung von Aufgaben. Ein typisches Skri
 1. Leere Datei erstellen:  
    ```sh
    touch meinscript.sh
-```
+   ```
 
 2. Datei mit `nano` bearbeiten:
     
