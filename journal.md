@@ -14,7 +14,7 @@ m122
 ```  
 
 ich kann jetzt auch vom Terminal mein Git repository updaten.  
-Vorlage für ein script erstellt ((scripthead.sh)[skripte/scripthead.sh])  
+Vorlage für ein script erstellt ([scripthead.sh](skripte/scripthead.sh))  
 	diese kann ich einfügen, indem ich in einem neuen script mit nano `ctrl+r` drücke, und dann den pfad für den `scripthead.sh` angebe
 
 
