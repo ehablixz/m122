@@ -10,7 +10,7 @@ git push
   
 # Bashscript Teil 3 (Tag 4)
 Ich habe eine leichte Struktur in meine ordner gebracht.  
-(ersichtlich mit `Tree ~/m122`):  
+(ersichtlich mit `tree ~/m122`):  
 ```
 m122
 ├── README.md
@@ -39,5 +39,3 @@ case $op in  #case leiten ein switch case statement ein, mit dem parameter $op (
   *) echo "Invalid operator!" && exit 1 ;;  # * ist so wie der Default (in bash normalerweise "alles"). deswegen wurde er vorhin escaped (\*)
 esac # case rückwarts geschrieben um den switch case zu beenden
 ```
-
-
