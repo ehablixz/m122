@@ -9,11 +9,12 @@ RESET='\033[0m'
 
 # Default commit message and backup path
 COMMIT_MESSAGE="Auto generated commit"
+# Default backup folder path
 BACKUP_FOLDER_PATH="/home/catgirl/BACKUP_m122/auto_backup"
 
 # Create backup folder if it doesn't exist
 mkdir -p "$BACKUP_FOLDER_PATH"
-
+cd "/home/catgirl/m122" || exit 1
 # Check if inside a git repo
 if [ ! -d ".git" ]; then
     echo -e "${FG_BRED}Not a git repository. Exiting.${RESET}"
