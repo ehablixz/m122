@@ -19,6 +19,7 @@ CONFIG_FILE="$HOME/.config/autogit.conf"
 AUTOGIT_CRON_SCRIPT="$HOME/bin/autogit-cron.sh"
 DEFAULT_COMMIT_MESSAGE="Auto commit"
 LOG_FILE="$HOME/.config/autogit.log"  # New log file location
+BACKUP_DIR="$HOME/.config/autogit/backups"
 
 # Color codes for better readability
 RED='\033[0;31m'
@@ -180,12 +181,40 @@ create_cron_script() {
 
 # Define log file
 LOG_FILE="$LOG_FILE"
+BACKUP_DIR="$BACKUP_DIR"
 
 # Function to log messages
 log_message() {
     local timestamp=\$(date "+%Y-%m-%d %H:%M:%S")
     echo "[\$timestamp] [CRON] \$1" >> "\$LOG_FILE"
     echo "\$1"
+}
+
+# Function to create backup
+create_backup() {
+    local repo_path="\$1"
+    local repo_name=\$(basename "\$repo_path")
+    local timestamp=\$(date +"%Y%m%d_%H%M%S")
+    local backup_file="\${BACKUP_DIR}/\${repo_name}_\${timestamp}.tar.gz"
+    
+    # Create backup directory if it doesn't exist
+    mkdir -p "\$BACKUP_DIR"
+    
+    log_message "Creating backup of repository: \$repo_path"
+    
+    # Fixed tar command
+    # Navigate to the parent directory first, then create archive using relative path
+    (cd "\$(dirname "\$repo_path")" && tar -czf "\$backup_file" \
+        --exclude="\$(basename "\$repo_path")/.git/objects" \
+        "\$(basename "\$repo_path")")
+    
+    if [ \$? -eq 0 ]; then
+        log_message "Backup created successfully at \$backup_file"
+        # Keep only the 5 most recent backups
+        ls -t "\${BACKUP_DIR}/\${repo_name}_"*.tar.gz 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null
+    else
+        log_message "Backup creation failed"
+    fi
 }
 
 # Source configuration if available
@@ -199,6 +228,9 @@ if [ ! -d "\$REPO_PATH/.git" ]; then
     log_message "Error: \$REPO_PATH is not a git repository."
     exit 1
 fi
+
+# Create backup before any operations
+create_backup "\$REPO_PATH"
 
 # Change to repository directory
 cd "\$REPO_PATH" || exit 1
@@ -227,7 +259,7 @@ fi
 EOF
     
     chmod +x "$AUTOGIT_CRON_SCRIPT"
-    log_info "Created executable script at $AUTOGIT_CRON_SCRIPT with logging capability"
+    log_info "Created executable script at $AUTOGIT_CRON_SCRIPT with backup and logging capability"
 }
 
 edit_config() {
@@ -270,6 +302,144 @@ setup_cron() {
     esac
 }
 
+# New function to create a repository backup
+create_repo_backup() {
+    local repo_path="$1"
+    local repo_name=$(basename "$repo_path")
+    local timestamp=$(date +"%Y%m%d_%H%M%S")
+    local backup_file="${BACKUP_DIR}/${repo_name}_${timestamp}.tar.gz"
+    
+    # Create backup directory if it doesn't exist
+    mkdir -p "$BACKUP_DIR"
+    
+    log_info "Creating backup of repository: $repo_path"
+    log_info "Backup will be stored at: $backup_file"
+    
+    # Fixed tar command
+    # Navigate to the parent directory first, then create archive using relative path
+    (cd "$(dirname "$repo_path")" && tar -czf "$backup_file" \
+        --exclude="$(basename "$repo_path")/.git/objects" \
+        "$(basename "$repo_path")")
+    
+    if [ $? -eq 0 ]; then
+        log_info "Backup created successfully"
+        # Keep only the 5 most recent backups to prevent disk space issues
+        ls -t "${BACKUP_DIR}/${repo_name}_"*.tar.gz 2>/dev/null | tail -n +6 | xargs rm -f 2>/dev/null
+        log_info "Cleaned up old backups, keeping 5 most recent"
+    else
+        log_error "Backup creation failed"
+    fi
+}
+
+# Function to manage backups
+manage_backups() {
+    # Source config to get repository path
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+    fi
+    
+    # Validate repository path
+    REPO_PATH=${REPO_PATH:-$(pwd)}
+    
+    if [ ! -d "$REPO_PATH/.git" ]; then
+        log_error "The specified directory ($REPO_PATH) is not a git repository."
+        read -p "Press Enter to return to menu..."
+        return
+    fi
+    
+    echo "Backup options:"
+    echo "1) Create backup now"
+    echo "2) List existing backups"
+    echo "3) Restore from backup"
+    echo "4) Return to main menu"
+    
+    read -p "Please select an option [1-4]: " backup_option
+    
+    case $backup_option in
+        1)
+            create_repo_backup "$REPO_PATH"
+            read -p "Press Enter to continue..."
+            ;;
+        2)
+            repo_name=$(basename "$REPO_PATH")
+            echo "Available backups for $repo_name:"
+            # NEW LOOP #5: List all available backups with details
+            ls -l "${BACKUP_DIR}/${repo_name}_"*.tar.gz 2>/dev/null | while read -r line; do
+                echo "$line" | awk '{print $6, $7, $8, $9}'
+            done
+            
+            if [ $? -ne 0 ]; then
+                log_error "No backups found for this repository"
+            fi
+            read -p "Press Enter to continue..."
+            ;;
+        3)
+            repo_name=$(basename "$REPO_PATH")
+            echo "Available backups for $repo_name:"
+            
+            # Create array of backup files
+            mapfile -t backups < <(ls "${BACKUP_DIR}/${repo_name}_"*.tar.gz 2>/dev/null)
+            
+            if [ ${#backups[@]} -eq 0 ]; then
+                log_error "No backups found for this repository"
+                read -p "Press Enter to continue..."
+                return
+            fi
+            
+            # Display backup options
+            for i in "${!backups[@]}"; do
+                echo "$((i+1))) $(basename "${backups[$i]}")"
+            done
+            
+            # Ask which backup to restore
+            read -p "Select backup to restore [1-${#backups[@]}] or 0 to cancel: " backup_choice
+            
+            if [[ "$backup_choice" =~ ^[0-9]+$ ]] && [ "$backup_choice" -ge 1 ] && [ "$backup_choice" -le ${#backups[@]} ]; then
+                selected_backup="${backups[$((backup_choice-1))]}"
+                
+                # Confirm restoration
+                read -p "WARNING: This will overwrite current repository state! Continue? [y/N]: " confirm
+                if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                    log_warning "Restoring repository from backup: $(basename "$selected_backup")"
+                    
+                    # Create a temporary directory
+                    TMP_DIR=$(mktemp -d)
+                    
+                    # Extract the backup to the temporary directory
+                    tar -xzf "$selected_backup" -C "$TMP_DIR"
+                    
+                    # Get the repository directory name
+                    REPO_DIR=$(find "$TMP_DIR" -maxdepth 1 -type d | tail -n 1)
+                    
+                    # Copy files to the current repository (preserving .git directory)
+                    rsync -a --exclude=".git" "$REPO_DIR/" "$REPO_PATH/"
+                    
+                    # Clean up
+                    rm -rf "$TMP_DIR"
+                    
+                    log_info "Repository restored successfully from backup"
+                else
+                    log_info "Restoration cancelled"
+                fi
+            elif [ "$backup_choice" -eq 0 ]; then
+                log_info "Restoration cancelled"
+            else
+                log_error "Invalid selection"
+            fi
+            read -p "Press Enter to continue..."
+            ;;
+        4)
+            return
+            ;;
+        *)
+            log_error "Invalid option."
+            manage_backups
+            ;;
+    esac
+    
+    show_menu
+}
+
 run_git_operations() {
     # Source config to get latest settings
     if [ -f "$CONFIG_FILE" ]; then
@@ -293,6 +463,9 @@ run_git_operations() {
         REPO_PATH="$new_path"
         sed -i "s|REPO_PATH=.*|REPO_PATH=\"$REPO_PATH\"|" "$CONFIG_FILE"
     fi
+    
+    # Create backup before any operations
+    create_repo_backup "$REPO_PATH"
     
     # Change to repository directory
     cd "$REPO_PATH" || exit 1
@@ -402,10 +575,11 @@ show_menu() {
     echo "3) Run git operations now"
     echo "4) View commit history"
     echo "5) View operation logs"  # New menu item
-    echo "6) Exit"
+    echo "6) Manage backups"  # New menu item
+    echo "7) Exit"
     echo "==============================================="
     
-    read -p "Please select an option [1-6]: " option
+    read -p "Please select an option [1-7]: " option
     
     case $option in
         1)
@@ -427,6 +601,9 @@ show_menu() {
             view_logs
             ;;
         6)
+            manage_backups  # New function call
+            ;;
+        7)
             log_info "Exiting..."
             exit 0
             ;;
