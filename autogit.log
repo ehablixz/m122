@@ -1,6 +1,0 @@
-mkdir: cannot create directory ‘/home//BACKUP_m122’: Permission denied
-[1;31mNot a git repository. Exiting.[0m
-[1;31mNot a git repository. Exiting.[0m
-[1;32m[Thu Apr 10 16:28:01 CEST 2025] Pulling changes...[0m
-Already up to date.
-[1;32m[Thu Apr 10 16:28:00 CEST 2025] Staging...[0m

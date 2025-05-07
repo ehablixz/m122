@@ -1,145 +1,272 @@
 #!/bin/bash
 
 # Author: Ajan Zuberi
-# Description: Automatically update git repository and create a zip as a backup
+# Description: Git auto-push script for automated repository management
 # Run using: ./autogit.sh
-# Options:
-# Commit message
-# Backup folder path
-#
-# Parameters:
-# None
-#
-# Version: 1.00
-# Created on: 10.04.2025
+# Options: none
+# Parameters: none
+# Version: 1.01
+# Created on: 07.05.2025
 #
 # Changelog:
-# 10.04.25 : Skript erstellt (A.Z.)
+# 07.05.2025 : Created Script (A.Z.)
+# 08.05.2025 : Fixed structure and improved error handling (A.Z.)
 #
 # Settings / Variables
 
-# source ./colors.sh # Load color definitions
+# Configuration constants
+CONFIG_FILE="/etc/autogit.conf"
+AUTOGIT_CRON_SCRIPT="/usr/local/bin/autogit-cron.sh"
+DEFAULT_COMMIT_MESSAGE="Auto commit"
 
-# Reset
-RESET="\e[0m"
+# Color codes for better readability
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+NC='\033[0m' # No Color
 
-# Standard Foreground Colors
-FG_BLACK="\e[30m"
-FG_RED="\e[31m"
-FG_GREEN="\e[32m"
-FG_YELLOW="\e[33m"
-FG_BLUE="\e[34m"
-FG_MAGENTA="\e[35m"
-FG_CYAN="\e[36m"
-FG_WHITE="\e[37m"
+# Function definitions
+log_info() {
+    echo -e "${GREEN}[INFO]${NC} $1"
+}
 
-# Bright Foreground Colors
-FG_BBLACK="\e[90m"    # Bright Black (Gray)
-FG_BRED="\e[91m"
-FG_BGREEN="\e[92m"
-FG_BYELLOW="\e[93m"
-FG_BBLUE="\e[94m"
-FG_BMAGENTA="\e[95m"
-FG_BCYAN="\e[96m"
-FG_BWHITE="\e[97m"
+log_warning() {
+    echo -e "${YELLOW}[WARNING]${NC} $1"
+}
 
-# Standard Background Colors
-BG_BLACK="\e[40m"
-BG_RED="\e[41m"
-BG_GREEN="\e[42m"
-BG_YELLOW="\e[43m"
-BG_BLUE="\e[44m"
-BG_MAGENTA="\e[45m"
-BG_CYAN="\e[46m"
-BG_WHITE="\e[47m"
+log_error() {
+    echo -e "${RED}[ERROR]${NC} $1"
+}
 
-# Bright Background Colors
-BG_BBLACK="\e[100m"
-BG_BRED="\e[101m"
-BG_BGREEN="\e[102m"
-BG_BYELLOW="\e[103m"
-BG_BBLUE="\e[104m"
-BG_BMAGENTA="\e[105m"
-BG_BCYAN="\e[106m"
-BG_BWHITE="\e[107m"
+check_prerequisites() {
+    # Check if git is installed
+    if ! command -v git &> /dev/null; then
+        log_error "Git could not be found. Please install Git."
+        exit 1
+    fi
+}
 
-# DO NOT CHANGE THE SCRIPT BELOW UNLESS YOU KNOW WHAT YOU ARE DOING
+create_config_file() {
+    log_info "No config file found. Creating default configuration..."
+    
+    cat <<EOF > "$CONFIG_FILE"
+# Autogit Configuration File
+# Created on: $(date +"%Y-%m-%d %H:%M:%S")
 
+# Repository path (must be a valid git repository)
+REPO_PATH="$(pwd)"
 
+# Default commit message
+COMMIT_MESSAGE="$DEFAULT_COMMIT_MESSAGE"
+
+# Automatic push (yes/no)
+AUTO_PUSH="no"
+EOF
+    
+    chmod 644 "$CONFIG_FILE"
+    log_info "Config file created at $CONFIG_FILE with default values."
+}
+
+create_cron_script() {
+    log_info "Creating autogit cron script..."
+    
+    cat <<EOF > "$AUTOGIT_CRON_SCRIPT"
 #!/bin/bash
 
-# Colors for output
-FG_BBLUE='\033[1;34m'
-FG_BBLACK='\033[1;30m'
-FG_BGREEN='\033[1;32m'
-FG_BRED='\033[1;31m'
-RESET='\033[0m'
+# Autogit automated script
+# Created on: $(date +"%Y-%m-%d %H:%M:%S")
 
-echo -e "${FG_BBLUE}Welcome to autogit.sh"
-echo -e "${FG_BBLACK}This script automates git commands and creates a tar.gz backup of the repository.${RESET}"
-
-echo "Please enter the commit message (Default: \"Auto generated commit\"):"
-read COMMIT_MESSAGE 
-echo -e "You entered: ${FG_BBLUE}$COMMIT_MESSAGE${RESET}"
-if [ -z "$COMMIT_MESSAGE" ]; then
-    COMMIT_MESSAGE="Auto generated commit"
-    echo -e "No commit message provided. Using default: ${FG_BBLUE}$COMMIT_MESSAGE${RESET}"
+# Source configuration if available
+if [ -f "$CONFIG_FILE" ]; then
+    source "$CONFIG_FILE"
 fi
 
-echo "Please enter the backup folder path (Default /home/${USER}/BACKUP_m122):"
-read BACKUP_FOLDER_PATH
-echo -e "You entered: ${FG_BBLUE}$BACKUP_FOLDER_PATH${RESET}"
-
-if [ -z "$BACKUP_FOLDER_PATH" ]; then
-    BACKUP_FOLDER_PATH="/home/$USER/BACKUP_m122"
-    echo -e "No backup folder path provided. Using default: ${FG_BBLUE}$BACKUP_FOLDER_PATH${RESET}"
-fi
-
-# Check and create backup folder if needed
-if [ ! -d "$BACKUP_FOLDER_PATH" ]; then
-    echo -e "${FG_BGREEN}Creating backup folder at $BACKUP_FOLDER_PATH${RESET}"
-    mkdir -p "$BACKUP_FOLDER_PATH"
-fi
-
-# Check if this is a git repo
-if [ ! -d ".git" ]; then
-    echo -e "${FG_BRED}This script must be run inside a git repository.${RESET}"
+# Validate repository path
+REPO_PATH=\${REPO_PATH:-\$(pwd)}
+if [ ! -d "\$REPO_PATH/.git" ]; then
+    echo "Error: \$REPO_PATH is not a git repository."
     exit 1
 fi
 
-# Check for required commands
-for cmd in git tar; do
-    if ! command -v $cmd &> /dev/null; then
-        echo -e "${FG_BRED}Required command '$cmd' not found. Please install it.${RESET}"
-        exit 1
-    fi
-done
+# Change to repository directory
+cd "\$REPO_PATH" || exit 1
 
-# Run git pull to sync with remote
-echo -e "${FG_BGREEN}Pulling latest changes from remote...${RESET}"
+# Perform git operations
+echo "Pulling latest changes..."
 git pull
 
-# Stage changes
-echo -e "${FG_BGREEN}Staging all changes...${RESET}"
+echo "Adding modified files..."
 git add .
 
-# Commit
-echo -e "${FG_BGREEN}Committing with message: '$COMMIT_MESSAGE'${RESET}"
-git commit -m "$COMMIT_MESSAGE"
+# Use provided message or default
+COMMIT_MSG=\${1:-"\$COMMIT_MESSAGE"}
+echo "Committing with message: \$COMMIT_MSG"
+git commit -m "\$COMMIT_MSG"
 
-# Push
-echo -e "${FG_BGREEN}Pushing to remote...${RESET}"
-git push
+# Push if auto-push is enabled or confirmed
+if [ "\$AUTO_PUSH" = "yes" ]; then
+    echo "Pushing changes automatically..."
+    git push
+else
+    read -p "Push changes? [Y/n]: " CONFIRM
+    if [[ "\$CONFIRM" =~ ^[Yy]$ || -z "\$CONFIRM" ]]; then
+        git push
+    else
+        echo "Changes committed but not pushed."
+    fi
+fi
+EOF
+    
+    chmod +x "$AUTOGIT_CRON_SCRIPT"
+    log_info "Created executable script at $AUTOGIT_CRON_SCRIPT"
+}
 
-# Create backup
-TIMESTAMP=$(date +"%Y%m%d_%H%M%S")
-REPO_NAME=$(basename "$(pwd)")
-BACKUP_FILENAME="${REPO_NAME}_backup_${TIMESTAMP}.tar.gz"
+edit_config() {
+    if command -v nano &> /dev/null; then
+        sudo nano "$CONFIG_FILE"
+    elif command -v vi &> /dev/null; then
+        sudo vi "$CONFIG_FILE"
+    else
+        log_error "No text editor found (nano or vi)."
+        exit 1
+    fi
+}
 
-echo -e "${FG_BGREEN}Creating tar.gz backup...${RESET}"
-tar --exclude="$BACKUP_FOLDER_PATH" -czf "/tmp/$BACKUP_FILENAME" .
+setup_cron() {
+    log_warning "You must know cronjob syntax to proceed!"
+    echo "1) Edit using user privileges (recommended)"
+    echo "2) Edit using root privileges (only if repo is in a protected dir)"
+    echo "3) Return to main menu"
+    
+    read -p "Please select an option [1-3]: " cron_option
+    
+    case $cron_option in
+        1)
+            log_info "Editing cronjob using user privileges..."
+            log_warning "Add a line like: 0 * * * * $AUTOGIT_CRON_SCRIPT"
+            crontab -e
+            ;;
+        2)
+            log_info "Editing cronjob using root privileges..."
+            log_warning "Add a line like: 0 * * * * $AUTOGIT_CRON_SCRIPT"
+            sudo crontab -e
+            ;;
+        3)
+            return
+            ;;
+        *)
+            log_error "Invalid option."
+            setup_cron
+            ;;
+    esac
+}
 
-echo -e "${FG_BGREEN}Moving backup to: ${BACKUP_FOLDER_PATH}${RESET}"
-mv "/tmp/$BACKUP_FILENAME" "$BACKUP_FOLDER_PATH"
+run_git_operations() {
+    # Source config to get latest settings
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+    fi
+    
+    # Validate repository path
+    REPO_PATH=${REPO_PATH:-$(pwd)}
+    
+    if [ ! -d "$REPO_PATH/.git" ]; then
+        log_error "The specified directory ($REPO_PATH) is not a git repository."
+        echo "Please enter a valid git repository path:"
+        read -r new_path
+        
+        if [ ! -d "$new_path/.git" ]; then
+            log_error "Invalid repository path. Exiting."
+            exit 1
+        fi
+        
+        # Update config with new path
+        REPO_PATH="$new_path"
+        sed -i "s|REPO_PATH=.*|REPO_PATH=\"$REPO_PATH\"|" "$CONFIG_FILE"
+    fi
+    
+    # Change to repository directory
+    cd "$REPO_PATH" || exit 1
+    log_info "Working in repository at $REPO_PATH"
+    
+    # Git operations
+    log_info "Pulling latest changes..."
+    git pull
+    
+    log_info "Adding changes..."
+    git add .
+    
+    echo "Enter your commit message:"
+    read -p "> " COMMIT_MSG
+    
+    if [ -z "$COMMIT_MSG" ]; then
+        COMMIT_MSG="$DEFAULT_COMMIT_MESSAGE"
+        log_warning "Using default commit message: $COMMIT_MSG"
+    fi
+    
+    log_info "Committing changes..."
+    git commit -m "$COMMIT_MSG"
+    
+    echo "Confirm git push? [Y/n]:"
+    read -p "> " CONFIRM
+    
+    if [[ "$CONFIRM" =~ ^[Yy]$ || -z "$CONFIRM" ]]; then
+        log_info "Pushing changes to remote repository..."
+        git push
+        log_info "Git operations completed successfully."
+    else
+        log_warning "Changes committed but not pushed."
+    fi
+}
 
-echo -e "${FG_BBLUE}All done! Backup created at: ${BACKUP_FOLDER_PATH}/${BACKUP_FILENAME}${RESET}"
+show_menu() {
+    clear
+    echo "==============================================="
+    echo "              AUTOGIT MANAGER                 "
+    echo "==============================================="
+    echo "1) Edit configuration file"
+    echo "2) Setup automated cronjob"
+    echo "3) Run git operations now"
+    echo "4) Exit"
+    echo "==============================================="
+    
+    read -p "Please select an option [1-4]: " option
+    
+    case $option in
+        1)
+            edit_config
+            show_menu
+            ;;
+        2)
+            setup_cron
+            show_menu
+            ;;
+        3)
+            run_git_operations
+            ;;
+        4)
+            log_info "Exiting..."
+            exit 0
+            ;;
+        *)
+            log_error "Invalid option."
+            show_menu
+            ;;
+    esac
+}
+
+# Main execution
+check_prerequisites
+
+# Check for config file and create if it doesn't exist
+if [ ! -f "$CONFIG_FILE" ]; then
+    create_config_file
+fi
+
+# Check for cron script and create if it doesn't exist
+if [ ! -f "$AUTOGIT_CRON_SCRIPT" ]; then
+    create_cron_script
+fi
+
+# Display main menu
+show_menu
