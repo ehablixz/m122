@@ -44,6 +44,17 @@ check_prerequisites() {
         log_error "Git could not be found. Please install Git."
         exit 1
     fi
+    
+    # NEW LOOP #1: Check for additional recommended tools
+    log_info "Checking for recommended tools..."
+    declare -a tools=("git-lfs" "git-flow" "meld")
+    for tool in "${tools[@]}"; do
+        if command -v "$tool" &> /dev/null; then
+            log_info "✓ $tool is installed"
+        else
+            log_warning "✗ $tool is not installed (optional)"
+        fi
+    done
 }
 
 create_config_file() {
@@ -138,6 +149,8 @@ edit_config() {
     fi
 }
 
+
+
 setup_cron() {
     log_warning "You must know cronjob syntax to proceed!"
     echo "1) Edit using user privileges (recommended)"
@@ -200,6 +213,35 @@ run_git_operations() {
     git pull
     
     log_info "Adding changes..."
+    
+    # NEW LOOP #2: Show status of modified files before adding
+    log_info "Modified files:"
+    git status -s | while read -r line; do
+        status=${line:0:2}
+        file=${line:3}
+        
+        case $status in
+            "M "*)
+                echo -e "${YELLOW}Modified:${NC} $file"
+                ;;
+            "A "*)
+                echo -e "${GREEN}Added:${NC} $file"
+                ;;
+            "D "*)
+                echo -e "${RED}Deleted:${NC} $file"
+                ;;
+            "R "*)
+                echo -e "${YELLOW}Renamed:${NC} $file"
+                ;;
+            "??"*)
+                echo -e "${GREEN}New file:${NC} $file"
+                ;;
+            *)
+                echo -e "${YELLOW}Changed:${NC} $file"
+                ;;
+        esac
+    done
+    
     git add .
     
     echo "Enter your commit message:"
@@ -225,6 +267,40 @@ run_git_operations() {
     fi
 }
 
+check_git_history() {
+    # Source config to get latest settings
+    if [ -f "$CONFIG_FILE" ]; then
+        source "$CONFIG_FILE"
+    fi
+    
+    # Validate repository path
+    REPO_PATH=${REPO_PATH:-$(pwd)}
+    
+    if [ ! -d "$REPO_PATH/.git" ]; then
+        log_error "The specified directory ($REPO_PATH) is not a git repository."
+        return 1
+    fi
+    
+    # Change to repository directory
+    cd "$REPO_PATH" || return 1
+    log_info "Checking commit history in repository at $REPO_PATH"
+    
+    # Ask how many commits to display
+    read -p "How many recent commits would you like to see? [5]: " commit_count
+    commit_count=${commit_count:-5}
+    
+    # LOOP #3: Display recent commits with details
+    log_info "Last $commit_count commits:"
+    git log -n "$commit_count" --pretty=format:"%h | %an | %ar | %s" | while IFS="|" read -r hash author time message; do
+        echo -e "${YELLOW}$hash${NC} | ${GREEN}$author${NC} | $time | $message"
+    done
+    
+    # Return to menu
+    echo
+    read -p "Press Enter to return to menu..."
+    show_menu
+}
+
 show_menu() {
     clear
     echo "==============================================="
@@ -233,10 +309,11 @@ show_menu() {
     echo "1) Edit configuration file"
     echo "2) Setup automated cronjob"
     echo "3) Run git operations now"
-    echo "4) Exit"
+    echo "4) View commit history"  # New menu item
+    echo "5) Exit"
     echo "==============================================="
     
-    read -p "Please select an option [1-4]: " option
+    read -p "Please select an option [1-5]: " option
     
     case $option in
         1)
@@ -251,6 +328,9 @@ show_menu() {
             run_git_operations
             ;;
         4)
+            check_git_history  # Call the new function
+            ;;
+        5)
             log_info "Exiting..."
             exit 0
             ;;
