@@ -10,7 +10,7 @@
 #
 # Changelog:
 # 07.05.2025 : Created Script (A.Z.)
-# 08.05.2025 : Fixed structure and improved error handling (A.Z.)
+# 08.05.2025 : Added logging to file (A.Z.)
 #
 # Settings / Variables
 
@@ -18,6 +18,7 @@
 CONFIG_FILE="$HOME/.config/autogit.conf"
 AUTOGIT_CRON_SCRIPT="$HOME/bin/autogit-cron.sh"
 DEFAULT_COMMIT_MESSAGE="Auto commit"
+LOG_FILE="$HOME/.config/autogit.log"  # New log file location
 
 # Color codes for better readability
 RED='\033[0;31m'
@@ -27,15 +28,98 @@ NC='\033[0m' # No Color
 
 # Function definitions
 log_info() {
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     echo -e "${GREEN}[INFO]${NC} $1"
+    echo "[$timestamp] [INFO] $1" >> "$LOG_FILE"
 }
 
 log_warning() {
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     echo -e "${YELLOW}[WARNING]${NC} $1"
+    echo "[$timestamp] [WARNING] $1" >> "$LOG_FILE"
 }
 
 log_error() {
+    local timestamp=$(date "+%Y-%m-%d %H:%M:%S")
     echo -e "${RED}[ERROR]${NC} $1"
+    echo "[$timestamp] [ERROR] $1" >> "$LOG_FILE"
+}
+
+# Function to initialize log file
+init_log_file() {
+    # Create the directory if it doesn't exist
+    mkdir -p "$(dirname "$LOG_FILE")"
+    
+    # Create or truncate the log file if it's larger than 1MB to prevent unlimited growth
+    if [ -f "$LOG_FILE" ] && [ $(stat -c%s "$LOG_FILE") -gt 1048576 ]; then
+        # Keep the last 100 lines and overwrite the file
+        tail -n 100 "$LOG_FILE" > "${LOG_FILE}.tmp" && mv "${LOG_FILE}.tmp" "$LOG_FILE"
+        log_info "Log file rotated due to size limit"
+    fi
+    
+    # Add header to log file if it doesn't exist or was rotated
+    if [ ! -s "$LOG_FILE" ]; then
+        echo "===== AUTOGIT LOG =====" > "$LOG_FILE"
+        echo "Started logging on $(date)" >> "$LOG_FILE"
+        echo "=========================" >> "$LOG_FILE"
+    fi
+}
+
+# New function to view logs
+view_logs() {
+    if [ ! -f "$LOG_FILE" ]; then
+        log_error "No log file found at $LOG_FILE"
+        read -p "Press Enter to return to menu..."
+        return
+    fi
+    
+    echo "Log file options:"
+    echo "1) View entire log file"
+    echo "2) View last 20 lines"
+    echo "3) View errors only"
+    echo "4) Clear log file"
+    echo "5) Return to main menu"
+    
+    read -p "Please select an option [1-5]: " log_option
+    
+    case $log_option in
+        1)
+            if command -v less &> /dev/null; then
+                less "$LOG_FILE"
+            else
+                cat "$LOG_FILE"
+                read -p "Press Enter to continue..."
+            fi
+            ;;
+        2)
+            tail -n 20 "$LOG_FILE"
+            read -p "Press Enter to continue..."
+            ;;
+        3)
+            # NEW LOOP #4: Filter and display error logs
+            echo "Errors from log file:"
+            grep -n "\[ERROR\]" "$LOG_FILE" | while read -r line; do
+                echo -e "${RED}$line${NC}"
+            done
+            read -p "Press Enter to continue..."
+            ;;
+        4)
+            read -p "Are you sure you want to clear the log file? [y/N]: " confirm
+            if [[ "$confirm" =~ ^[Yy]$ ]]; then
+                init_log_file
+                log_info "Log file cleared"
+            fi
+            ;;
+        5)
+            return
+            ;;
+        *)
+            log_error "Invalid option."
+            view_logs
+            ;;
+    esac
+    
+    show_menu
 }
 
 check_prerequisites() {
@@ -81,6 +165,7 @@ EOF
     log_info "Config file created at $CONFIG_FILE with default values."
 }
 
+# Modified create_cron_script to include logging
 create_cron_script() {
     # Create the directory if it doesn't exist
     mkdir -p "$(dirname "$AUTOGIT_CRON_SCRIPT")"
@@ -93,6 +178,16 @@ create_cron_script() {
 # Autogit automated script
 # Created on: $(date +"%Y-%m-%d %H:%M:%S")
 
+# Define log file
+LOG_FILE="$LOG_FILE"
+
+# Function to log messages
+log_message() {
+    local timestamp=\$(date "+%Y-%m-%d %H:%M:%S")
+    echo "[\$timestamp] [CRON] \$1" >> "\$LOG_FILE"
+    echo "\$1"
+}
+
 # Source configuration if available
 if [ -f "$CONFIG_FILE" ]; then
     source "$CONFIG_FILE"
@@ -101,41 +196,38 @@ fi
 # Validate repository path
 REPO_PATH=\${REPO_PATH:-\$(pwd)}
 if [ ! -d "\$REPO_PATH/.git" ]; then
-    echo "Error: \$REPO_PATH is not a git repository."
+    log_message "Error: \$REPO_PATH is not a git repository."
     exit 1
 fi
 
 # Change to repository directory
 cd "\$REPO_PATH" || exit 1
+log_message "Working in repository at \$REPO_PATH"
 
 # Perform git operations
-echo "Pulling latest changes..."
-git pull
+log_message "Pulling latest changes..."
+git pull >> "\$LOG_FILE" 2>&1
 
-echo "Adding modified files..."
-git add .
+log_message "Adding modified files..."
+git add . >> "\$LOG_FILE" 2>&1
 
 # Use provided message or default
 COMMIT_MSG=\${1:-"\$COMMIT_MESSAGE"}
-echo "Committing with message: \$COMMIT_MSG"
-git commit -m "\$COMMIT_MSG"
+log_message "Committing with message: \$COMMIT_MSG"
+git commit -m "\$COMMIT_MSG" >> "\$LOG_FILE" 2>&1 || log_message "No changes to commit or commit failed"
 
 # Push if auto-push is enabled or confirmed
 if [ "\$AUTO_PUSH" = "yes" ]; then
-    echo "Pushing changes automatically..."
-    git push
+    log_message "Pushing changes automatically..."
+    git push >> "\$LOG_FILE" 2>&1 || log_message "Push failed"
+    log_message "Automated git operations completed"
 else
-    read -p "Push changes? [Y/n]: " CONFIRM
-    if [[ "\$CONFIRM" =~ ^[Yy]$ || -z "\$CONFIRM" ]]; then
-        git push
-    else
-        echo "Changes committed but not pushed."
-    fi
+    log_message "Auto-push disabled. Changes committed but not pushed."
 fi
 EOF
     
     chmod +x "$AUTOGIT_CRON_SCRIPT"
-    log_info "Created executable script at $AUTOGIT_CRON_SCRIPT"
+    log_info "Created executable script at $AUTOGIT_CRON_SCRIPT with logging capability"
 }
 
 edit_config() {
@@ -148,8 +240,6 @@ edit_config() {
         exit 1
     fi
 }
-
-
 
 setup_cron() {
     log_warning "You must know cronjob syntax to proceed!"
@@ -301,6 +391,7 @@ check_git_history() {
     show_menu
 }
 
+# Update the show_menu function to include the log viewing option
 show_menu() {
     clear
     echo "==============================================="
@@ -309,11 +400,12 @@ show_menu() {
     echo "1) Edit configuration file"
     echo "2) Setup automated cronjob"
     echo "3) Run git operations now"
-    echo "4) View commit history"  # New menu item
-    echo "5) Exit"
+    echo "4) View commit history"
+    echo "5) View operation logs"  # New menu item
+    echo "6) Exit"
     echo "==============================================="
     
-    read -p "Please select an option [1-5]: " option
+    read -p "Please select an option [1-6]: " option
     
     case $option in
         1)
@@ -326,11 +418,15 @@ show_menu() {
             ;;
         3)
             run_git_operations
+            show_menu
             ;;
         4)
-            check_git_history  # Call the new function
+            check_git_history
             ;;
         5)
+            view_logs
+            ;;
+        6)
             log_info "Exiting..."
             exit 0
             ;;
@@ -342,6 +438,10 @@ show_menu() {
 }
 
 # Main execution
+# Initialize log file first
+init_log_file
+log_info "Starting autogit script"
+
 check_prerequisites
 
 # Check for config file and create if it doesn't exist
