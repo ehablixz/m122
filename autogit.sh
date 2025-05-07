@@ -15,8 +15,8 @@
 # Settings / Variables
 
 # Configuration constants
-CONFIG_FILE="/etc/autogit.conf"
-AUTOGIT_CRON_SCRIPT="/usr/local/bin/autogit-cron.sh"
+CONFIG_FILE="$HOME/.config/autogit.conf"
+AUTOGIT_CRON_SCRIPT="$HOME/bin/autogit-cron.sh"
 DEFAULT_COMMIT_MESSAGE="Auto commit"
 
 # Color codes for better readability
@@ -47,6 +47,9 @@ check_prerequisites() {
 }
 
 create_config_file() {
+    # Create the directory if it doesn't exist
+    mkdir -p "$(dirname "$CONFIG_FILE")"
+    
     log_info "No config file found. Creating default configuration..."
     
     cat <<EOF > "$CONFIG_FILE"
@@ -68,6 +71,9 @@ EOF
 }
 
 create_cron_script() {
+    # Create the directory if it doesn't exist
+    mkdir -p "$(dirname "$AUTOGIT_CRON_SCRIPT")"
+    
     log_info "Creating autogit cron script..."
     
     cat <<EOF > "$AUTOGIT_CRON_SCRIPT"
@@ -123,9 +129,9 @@ EOF
 
 edit_config() {
     if command -v nano &> /dev/null; then
-        sudo nano "$CONFIG_FILE"
+        nano "$CONFIG_FILE"  # Remove sudo
     elif command -v vi &> /dev/null; then
-        sudo vi "$CONFIG_FILE"
+        vi "$CONFIG_FILE"  # Remove sudo
     else
         log_error "No text editor found (nano or vi)."
         exit 1
